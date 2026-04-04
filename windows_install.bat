@@ -20,18 +20,14 @@ copy /Y "%SOURCE_GAMES%\*.bat" "%INSTALL_GAMES%\" >nul
 copy /Y "%SOURCE_GAMES%\*.ps1" "%INSTALL_GAMES%\" >nul
 
 echo Adding to PATH (user-level)...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$target = [System.IO.Path]::GetFullPath('%INSTALL_BIN%');" ^
-    "$current = [Environment]::GetEnvironmentVariable('Path', 'User');" ^
-    "$parts = @();" ^
-    "if ($current) { $parts = $current -split ';' | Where-Object { $_ } }" ^
-    "if ($parts -notcontains $target) {" ^
-    "  $updated = (($parts + $target) | Select-Object -Unique) -join ';';" ^
-    "  [Environment]::SetEnvironmentVariable('Path', $updated, 'User')" ^
-    "}"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SOURCE_SUPPORT%\update_user_path.ps1" add "%INSTALL_BIN%"
+
+echo ;%PATH%; | findstr /I /C:";%INSTALL_BIN%;" >nul
+if errorlevel 1 set "PATH=%PATH%;%INSTALL_BIN%"
 
 echo Installed files to:
 echo   %INSTALL_ROOT%
-echo Done. Restart your terminal before using the commands.
+echo Done. New terminals should pick up the commands immediately.
+echo Restart any terminal windows that were already open before install.
 
 pause
