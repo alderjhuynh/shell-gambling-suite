@@ -19,6 +19,9 @@ copy /Y "%SOURCE_BIN%\*.cmd" "%INSTALL_BIN%\" >nul
 copy /Y "%SOURCE_GAMES%\*.bat" "%INSTALL_GAMES%\" >nul
 copy /Y "%SOURCE_GAMES%\*.ps1" "%INSTALL_GAMES%\" >nul
 
+if exist "%INSTALL_BIN%\sl.cmd" del /Q "%INSTALL_BIN%\sl.cmd"
+if exist "%INSTALL_BIN%\sc.cmd" del /Q "%INSTALL_BIN%\sc.cmd"
+
 echo Adding to PATH (user-level)...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SOURCE_SUPPORT%\update_user_path.ps1" add "%INSTALL_BIN%"
 echo Updating PowerShell profile commands...
