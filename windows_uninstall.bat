@@ -7,13 +7,7 @@ set "INSTALL_BIN=%INSTALL_ROOT%\bin"
 echo Uninstalling Aura Gambling Suite CLI...
 
 echo Removing PATH entry (user-level)...
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-    "$target = [System.IO.Path]::GetFullPath('%INSTALL_BIN%');" ^
-    "$current = [Environment]::GetEnvironmentVariable('Path', 'User');" ^
-    "$parts = @();" ^
-    "if ($current) { $parts = $current -split ';' | Where-Object { $_ } }" ^
-    "$updated = ($parts | Where-Object { [System.StringComparer]::OrdinalIgnoreCase.Compare($_, $target) -ne 0 }) -join ';';" ^
-    "[Environment]::SetEnvironmentVariable('Path', $updated, 'User')"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0windows_support\update_user_path.ps1" remove "%INSTALL_BIN%"
 
 if exist "%INSTALL_ROOT%" (
     rmdir /S /Q "%INSTALL_ROOT%"
@@ -22,5 +16,6 @@ if exist "%INSTALL_ROOT%" (
     echo Nothing to remove at %INSTALL_ROOT%
 )
 
-echo Done. Restart your terminal to flush PATH changes.
+echo Done. New terminals should drop the commands immediately.
+echo Restart any terminal windows that were already open before uninstall.
 pause
