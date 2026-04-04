@@ -182,25 +182,86 @@ function Show-Bonus {
     }
 }
 
+function Get-RepeatText {
+    param(
+        [string]$Character,
+        [int]$Count
+    )
+
+    if ($Count -le 0) {
+        return ''
+    }
+
+    return ([string]$Character[0]) * $Count
+}
+
+function Get-BoxInnerWidth {
+    param([int]$Width)
+
+    if ($Width -lt 4) {
+        return 1
+    }
+
+    return $Width - 2
+}
+
+function Write-BoxLine {
+    param(
+        [string]$Text = '',
+        [int]$Width = 44
+    )
+
+    $innerWidth = Get-BoxInnerWidth -Width $Width
+    $content = if ($null -eq $Text) { '' } else { [string]$Text }
+    if ($content.Length -gt $innerWidth) {
+        $content = $content.Substring(0, $innerWidth)
+    }
+
+    Write-Host ('║{0}║' -f $content.PadRight($innerWidth))
+}
+
+function Write-BoxDivider {
+    param([int]$Width = 44)
+    Write-Host ('╠{0}╣' -f (Get-RepeatText -Character '═' -Count (Get-BoxInnerWidth -Width $Width)))
+}
+
+function Get-CenteredText {
+    param(
+        [string]$Text,
+        [int]$Width
+    )
+
+    $content = if ($null -eq $Text) { '' } else { [string]$Text }
+    $innerWidth = Get-BoxInnerWidth -Width $Width
+    if ($content.Length -ge $innerWidth) {
+        return $content.Substring(0, $innerWidth)
+    }
+
+    $leftPad = [math]::Floor(($innerWidth - $content.Length) / 2)
+    return (' ' * $leftPad) + $content
+}
+
 function Show-GameBanner {
     param(
         [string]$Title,
         [hashtable]$State,
-        [int]$Bet = 0
+        [int]$Bet = 0,
+        [int]$Width = 44
     )
 
     Clear-Host
-    Write-Host '========================================'
-    Write-Host ('  {0}' -f $Title)
-    Write-Host '  Aura Gambling Suite'
-    Write-Host '========================================'
+    Write-Host ('╔{0}╗' -f (Get-RepeatText -Character '═' -Count (Get-BoxInnerWidth -Width $Width)))
+    Write-BoxLine -Text (Get-CenteredText -Text $Title -Width $Width) -Width $Width
+    Write-BoxLine -Text (Get-CenteredText -Text 'Aura Gambling Suite' -Width $Width) -Width $Width
+    Write-BoxDivider -Width $Width
 
     if ($Bet -gt 0) {
-        Write-Host ('Credits: {0}   Bet: {1}   +{2} in {3}' -f $State.credits, $Bet, $script:PassiveCreditAmount, (Get-TimerText -State $State))
+        Write-BoxLine -Text ('  Credits: {0}   Bet: {1}   +{2} in {3}' -f $State.credits, $Bet, $script:PassiveCreditAmount, (Get-TimerText -State $State)) -Width $Width
     } else {
-        Write-Host ('Credits: {0}   +{1} in {2}' -f $State.credits, $script:PassiveCreditAmount, (Get-TimerText -State $State))
+        Write-BoxLine -Text ('  Credits: {0}   +{1} in {2}' -f $State.credits, $script:PassiveCreditAmount, (Get-TimerText -State $State)) -Width $Width
     }
 
+    Write-Host ('╚{0}╝' -f (Get-RepeatText -Character '═' -Count (Get-BoxInnerWidth -Width $Width)))
     Write-Host ''
 }
 
@@ -232,15 +293,12 @@ function New-ShuffledDeck {
     $cards = @()
     foreach ($suit in @('S', 'H', 'D', 'C')) {
         foreach ($rank in @('A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K')) {
-            $cards += [pscustomobject]@{
-                Rank = $rank
-                Suit = $suit
-            }
+            $cards += ('{0}|{1}' -f $rank, $suit)
         }
     }
 
     $shuffled = [System.Collections.ArrayList]::new()
-    foreach ($card in ($cards | Sort-Object { Get-Random })) {
+    foreach ($card in (Get-Random -InputObject $cards -Count $cards.Count)) {
         [void]$shuffled.Add($card)
     }
 
@@ -257,7 +315,127 @@ function Draw-Card {
 
 function Format-Card {
     param($Card)
-    return '[{0,-2}{1}]' -f $Card.Rank, $Card.Suit
+
+    if ($null -eq $Card) {
+        return '[??]'
+    }
+
+    $parts = ([string]$Card) -split '\|', 2
+    if ($parts.Count -lt 2) {
+        return '[??]'
+    }
+
+    return '[{0,-2}{1}]' -f $parts[0], $parts[1]
+}
+
+function Get-CardRank {
+    param([string]$Card)
+
+    if ([string]::IsNullOrWhiteSpace($Card)) {
+        return ''
+    }
+
+    return ($Card -split '\|', 2)[0]
+}
+
+function Get-CardSuit {
+    param([string]$Card)
+
+    if ([string]::IsNullOrWhiteSpace($Card)) {
+        return ''
+    }
+
+    $parts = $Card -split '\|', 2
+    if ($parts.Count -lt 2) {
+        return ''
+    }
+
+    return $parts[1]
+}
+
+function Get-SuitGlyph {
+    param([string]$Suit)
+
+    switch ($Suit) {
+        'S' { return '♠' }
+        'H' { return '♥' }
+        'D' { return '♦' }
+        'C' { return '♣' }
+        default { return $Suit }
+    }
+}
+
+function Get-CardLines {
+    param(
+        [string]$Card,
+        [switch]$Hidden,
+        [switch]$Held
+    )
+
+    if ($Hidden) {
+        return @(
+            '┌─────┐',
+            '│░░░░░│',
+            '│░░░░░│',
+            '│░░░░░│',
+            '└─────┘'
+        )
+    }
+
+    $rank = Get-CardRank -Card $Card
+    $glyph = Get-SuitGlyph -Suit (Get-CardSuit -Card $Card)
+    $left = '{0,-2}' -f $rank
+    $right = '{0,2}' -f $rank
+
+    if ($Held) {
+        return @(
+            '┏━━━━━┓',
+            ('┃{0}   ┃' -f $left),
+            ('┃  {0}  ┃' -f $glyph),
+            ('┃   {0}┃' -f $right),
+            '┗━━━━━┛'
+        )
+    }
+
+    return @(
+        '┌─────┐',
+        ('│{0}   │' -f $left),
+        ('│  {0}  │' -f $glyph),
+        ('│   {0}│' -f $right),
+        '└─────┘'
+    )
+}
+
+function Show-CardRow {
+    param(
+        [string[]]$Cards,
+        [bool[]]$Held = @(),
+        [switch]$HideSecond
+    )
+
+    if ($null -eq $Cards -or $Cards.Count -eq 0) {
+        return
+    }
+
+    $rows = @('', '', '', '', '')
+    for ($i = 0; $i -lt $Cards.Count; $i++) {
+        $heldFlag = $false
+        if ($Held.Count -gt $i) {
+            $heldFlag = [bool]$Held[$i]
+        }
+
+        $lines = Get-CardLines -Card $Cards[$i] -Held:$heldFlag -Hidden:($HideSecond -and $i -eq 1)
+        for ($row = 0; $row -lt $rows.Count; $row++) {
+            if ($rows[$row]) {
+                $rows[$row] += ' '
+            }
+            $rows[$row] += $lines[$row]
+        }
+    }
+
+    foreach ($row in $rows) {
+        Write-Host ('  {0}' -f $row)
+    }
 }
 
 function Format-Hand {
@@ -284,7 +462,8 @@ function Get-HandInfo {
     $total = 0
     $aces = 0
     foreach ($card in $Hand) {
-        switch ($card.Rank) {
+        $rank = Get-CardRank -Card ([string]$card)
+        switch ($rank) {
             'J' { $total += 10 }
             'Q' { $total += 10 }
             'K' { $total += 10 }
@@ -292,7 +471,7 @@ function Get-HandInfo {
                 $total += 11
                 $aces += 1
             }
-            default { $total += [int]$card.Rank }
+            default { $total += [int]$rank }
         }
     }
 
@@ -342,15 +521,19 @@ function Show-BlackjackTable {
         [switch]$RevealDealer
     )
 
-    Show-GameBanner -Title 'BLACKJACK' -State $State -Bet $Bet
+    Show-GameBanner -Title 'BLACKJACK' -State $State -Bet $Bet -Width 58
 
     if ($RevealDealer) {
-        Write-Host ('Dealer: {0}   Total: {1}' -f (Format-Hand -Hand $Dealer), (Get-HandTotal -Hand $Dealer))
+        Write-Host ('Dealer [{0}]' -f (Get-HandTotal -Hand $Dealer))
+        Show-CardRow -Cards @($Dealer)
     } else {
-        Write-Host ('Dealer: {0}   Total: {1} + ?' -f (Format-Hand -Hand $Dealer -HideSecond), (Get-HandTotal -Hand @($Dealer[0])))
+        Write-Host ('Dealer [{0} + ?]' -f (Get-HandTotal -Hand @($Dealer[0])))
+        Show-CardRow -Cards @($Dealer) -HideSecond
     }
 
-    Write-Host ('Player: {0}   Total: {1}' -f (Format-Hand -Hand $Player), (Get-HandTotal -Hand $Player))
+    Write-Host ''
+    Write-Host ('You [{0}]' -f (Get-HandTotal -Hand $Player))
+    Show-CardRow -Cards @($Player)
     Write-Host ''
 
     if ($Message) {
@@ -370,7 +553,7 @@ function Play-Blackjack {
             Show-Bonus -Bonus $bonus
         }
 
-        Show-GameBanner -Title 'BLACKJACK' -State $state -Bet $bet
+        Show-GameBanner -Title 'BLACKJACK' -State $state -Bet $bet -Width 58
 
         if ($state.credits -le 0) {
             Write-Host 'OUT OF CREDITS - wait for the next free bonus.'
@@ -744,7 +927,7 @@ function Play-Slots {
             Show-Bonus -Bonus $bonus
         }
 
-        Show-GameBanner -Title 'SLOTS' -State $state -Bet $bet
+        Show-GameBanner -Title 'SLOT MACHINE' -State $state -Bet $bet -Width 44
 
         if ($state.credits -le 0) {
             Write-Host 'OUT OF CREDITS - wait for the next free bonus.'
@@ -781,8 +964,12 @@ function Play-Slots {
         $state.credits += $result.Payout
         Save-State -State $state
 
-        Show-GameBanner -Title 'SLOTS' -State $state -Bet $bet
-        Write-Host ('| {0} | {1} | {2} |' -f $reels[0], $reels[1], $reels[2])
+        Show-GameBanner -Title 'SLOT MACHINE' -State $state -Bet $bet -Width 44
+        Write-Host '╔══════════════════════╗'
+        Write-Host '║     SLOT MACHINE     ║'
+        Write-Host '╠══════════════════════╣'
+        Write-Host ('║   {0,-2}    {1,-2}    {2,-2}   ║' -f $reels[0], $reels[1], $reels[2])
+        Write-Host '╚══════════════════════╝'
         Write-Host ''
         if ($result.Payout -gt 0) {
             Write-Host ('{0}. +{1} credits.' -f $result.Label, $result.Payout)
@@ -799,18 +986,20 @@ function Show-VideoPokerPaytable {
     param([int]$Bet)
 
     Clear-Host
-    Write-Host '==================== PAY TABLE ===================='
-    Write-Host ('Royal Flush       {0,6} cr' -f ($Bet * 250))
-    Write-Host ('Straight Flush    {0,6} cr' -f ($Bet * 50))
-    Write-Host ('Four of a Kind    {0,6} cr' -f ($Bet * 25))
-    Write-Host ('Full House        {0,6} cr' -f ($Bet * 9))
-    Write-Host ('Flush             {0,6} cr' -f ($Bet * 6))
-    Write-Host ('Straight          {0,6} cr' -f ($Bet * 4))
-    Write-Host ('Three of a Kind   {0,6} cr' -f ($Bet * 3))
-    Write-Host ('Two Pair          {0,6} cr' -f ($Bet * 2))
-    Write-Host ('Jacks or Better   {0,6} cr' -f $Bet)
-    Write-Host ('Nothing           {0,6} cr' -f 0)
-    Write-Host '==================================================='
+    Write-Host '╔══════════════════════════════════════════════════╗'
+    Write-Host '║               VIDEO POKER PAY TABLE             ║'
+    Write-Host '╠══════════════════════════════════════════════════╣'
+    Write-Host ('║  Royal Flush       {0,8} credits             ║' -f ($Bet * 250))
+    Write-Host ('║  Straight Flush    {0,8} credits             ║' -f ($Bet * 50))
+    Write-Host ('║  Four of a Kind    {0,8} credits             ║' -f ($Bet * 25))
+    Write-Host ('║  Full House        {0,8} credits             ║' -f ($Bet * 9))
+    Write-Host ('║  Flush             {0,8} credits             ║' -f ($Bet * 6))
+    Write-Host ('║  Straight          {0,8} credits             ║' -f ($Bet * 4))
+    Write-Host ('║  Three of a Kind   {0,8} credits             ║' -f ($Bet * 3))
+    Write-Host ('║  Two Pair          {0,8} credits             ║' -f ($Bet * 2))
+    Write-Host ('║  Jacks or Better   {0,8} credits             ║' -f $Bet)
+    Write-Host ('║  Nothing           {0,8} credits             ║' -f 0)
+    Write-Host '╚══════════════════════════════════════════════════╝'
     Read-Host 'Press Enter'
 }
 
@@ -823,15 +1012,21 @@ function Show-VideoPokerHand {
         [string]$Message = ''
     )
 
-    Show-GameBanner -Title 'VIDEO POKER' -State $State -Bet $Bet
+    Show-GameBanner -Title 'VIDEO POKER' -State $State -Bet $Bet -Width 66
+    Show-CardRow -Cards @($Cards) -Held $Held
 
-    $labels = @()
+    $holdLabels = @()
+    $indexes = @()
     for ($i = 0; $i -lt $Cards.Count; $i++) {
-        $tag = if ($Held[$i]) { 'HOLD' } else { '    ' }
-        $labels += ('{0} {1}' -f (Format-Card -Card $Cards[$i]), $tag)
+        if ($Held[$i]) {
+            $holdLabels += ' HOLD   '
+        } else {
+            $holdLabels += '        '
+        }
+        $indexes += ('  [{0}]   ' -f ($i + 1))
     }
-    Write-Host ($labels -join '   ')
-    Write-Host '  1            2            3            4            5'
+    Write-Host ('  {0}' -f ($holdLabels -join ' '))
+    Write-Host ('  {0}' -f ($indexes -join ' '))
     Write-Host ''
     if ($Message) {
         Write-Host $Message
@@ -848,8 +1043,8 @@ function Evaluate-VideoPokerHand {
     $ranks = @()
     $suits = @()
     foreach ($card in $Cards) {
-        $ranks += $card.Rank
-        $suits += $card.Suit
+        $ranks += (Get-CardRank -Card ([string]$card))
+        $suits += (Get-CardSuit -Card ([string]$card))
     }
 
     $flush = (($suits | Select-Object -Unique).Count -eq 1)
@@ -924,7 +1119,7 @@ function Play-VideoPoker {
             Show-Bonus -Bonus $bonus
         }
 
-        Show-GameBanner -Title 'VIDEO POKER' -State $state -Bet $bet
+        Show-GameBanner -Title 'VIDEO POKER' -State $state -Bet $bet -Width 66
 
         if ($state.credits -le 0) {
             Write-Host 'OUT OF CREDITS - wait for the next free bonus.'
@@ -1069,24 +1264,28 @@ function Show-ScratcherGrid {
         [string]$Message = ''
     )
 
-    Show-GameBanner -Title 'SCRATCHERS' -State $script:ScratchState -Bet 0
-    Write-Host ('Ticket: {0} ({1} credits)' -f $Ticket.Name, $Ticket.Cost)
-    Write-Host $Ticket.Description
+    Show-GameBanner -Title 'SCRATCHERS' -State $script:ScratchState -Bet 0 -Width 50
+    Write-Host ('Ticket: {0}   Cost: {1}' -f $Ticket.Name, $Ticket.Cost)
+    Write-Host ('Rules:  {0}' -f $Ticket.Description)
     Write-Host ''
 
     $index = 0
+    $cellWidth = 4
+    $rowWidth = ($Ticket.Cols * ($cellWidth + 1)) + 1
+    Write-Host ('  ┌{0}┐' -f (Get-RepeatText -Character '─' -Count ($rowWidth - 2)))
     for ($row = 0; $row -lt $Ticket.Rows; $row++) {
         $parts = @()
         for ($col = 0; $col -lt $Ticket.Cols; $col++) {
             if ($Revealed[$index]) {
-                $parts += ('[{0}]' -f $Cells[$index].PadRight(2))
+                $parts += (' {0,-2} ' -f $Cells[$index])
             } else {
-                $parts += ('[{0:00}]' -f ($index + 1))
+                $parts += (' {0:00} ' -f ($index + 1))
             }
             $index += 1
         }
-        Write-Host ($parts -join ' ')
+        Write-Host ('  │{0}│' -f ($parts -join '│'))
     }
+    Write-Host ('  └{0}┘' -f (Get-RepeatText -Character '─' -Count ($rowWidth - 2)))
 
     Write-Host ''
     if ($Message) {
@@ -1144,7 +1343,7 @@ function Play-Scratchers {
             Show-Bonus -Bonus $bonus
         }
 
-        Show-GameBanner -Title 'SCRATCHERS' -State $script:ScratchState -Bet 0
+        Show-GameBanner -Title 'SCRATCHERS' -State $script:ScratchState -Bet 0 -Width 50
         foreach ($ticket in $script:ScratchTickets) {
             Write-Host ('[{0}] {1} - {2} credits' -f $ticket.Id, $ticket.Name, $ticket.Cost)
             Write-Host ('    {0}' -f $ticket.Description)
@@ -1177,7 +1376,7 @@ function Play-Scratchers {
         $script:ScratchState.passive_earned = 0
         Save-State -State $script:ScratchState
 
-        $cells = @(New-ScratcherGrid -Ticket $ticket)
+        $cells = @([string[]](New-ScratcherGrid -Ticket $ticket))
         $revealed = @()
         for ($i = 0; $i -lt $cells.Count; $i++) {
             $revealed += $false
