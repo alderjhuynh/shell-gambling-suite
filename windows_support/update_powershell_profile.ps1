@@ -26,7 +26,7 @@ function Get-ManagedBlock {
     param([string]$BinPath)
 
     $escapedBin = $BinPath.Replace("'", "''")
-    $launchers = @('cf', 'rps', 'sl', 'sc', 'bj', 'vp')
+    $launchers = @('cf', 'rps', 'slt', 'scr', 'bj', 'vp')
     $lines = @(
         $startMarker,
         ('$AuraSuiteBin = ''{0}''' -f $escapedBin)
