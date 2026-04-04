@@ -21,6 +21,8 @@ copy /Y "%SOURCE_GAMES%\*.ps1" "%INSTALL_GAMES%\" >nul
 
 echo Adding to PATH (user-level)...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%SOURCE_SUPPORT%\update_user_path.ps1" add "%INSTALL_BIN%"
+echo Updating PowerShell profile commands...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SOURCE_SUPPORT%\update_powershell_profile.ps1" add "%INSTALL_BIN%"
 
 echo ;%PATH%; | findstr /I /C:";%INSTALL_BIN%;" >nul
 if errorlevel 1 set "PATH=%PATH%;%INSTALL_BIN%"
