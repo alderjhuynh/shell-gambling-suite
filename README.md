@@ -14,12 +14,12 @@ Unix-like installs assume:
 
 `install.sh` copies the game scripts from `games/` and gives them short command names:
 
-- `bj bash` -> `blackjack.py`
-- `cf bash` -> `coinflip.py`
-- `rps bash` -> `rock_paper_scissors.py`
-- `sc bash` -> `scratchers.py`
-- `sl bash` -> `slots.py`
-- `vp bash` -> `video_poker.py`
+- `bj` -> `blackjack.py`
+- `cf` -> `coinflip.py`
+- `rps` -> `rock_paper_scissors.py`
+- `sc` -> `scratchers.py`
+- `sl` -> `slots.py`
+- `vp` -> `video_poker.py`
 
 Feel free to change the names of the commands within `install.sh`
 
