@@ -297,20 +297,20 @@ function New-ShuffledDeck {
         }
     }
 
-    $shuffled = [System.Collections.ArrayList]::new()
+    $shuffled = [System.Collections.Queue]::new()
     foreach ($card in (Get-Random -InputObject $cards -Count $cards.Count)) {
-        [void]$shuffled.Add($card)
+        [void]$shuffled.Enqueue($card)
     }
 
-    return $shuffled
+    return ,$shuffled
 }
 
 function Draw-Card {
-    param([System.Collections.ArrayList]$Deck)
+    if ($script:CurrentDeck.Count -le 0) {
+        throw 'Cannot draw from an empty deck.'
+    }
 
-    $card = $Deck[0]
-    $Deck.RemoveAt(0)
-    return $card
+    return $script:CurrentDeck.Dequeue()
 }
 
 function Format-Card {
@@ -584,13 +584,13 @@ function Play-Blackjack {
         $state.passive_earned = 0
         Save-State -State $state
 
-        $deck = New-ShuffledDeck
+        $script:CurrentDeck = New-ShuffledDeck
         $player = [System.Collections.ArrayList]::new()
         $dealer = [System.Collections.ArrayList]::new()
-        [void]$player.Add((Draw-Card -Deck $deck))
-        [void]$dealer.Add((Draw-Card -Deck $deck))
-        [void]$player.Add((Draw-Card -Deck $deck))
-        [void]$dealer.Add((Draw-Card -Deck $deck))
+        [void]$player.Add((Draw-Card))
+        [void]$dealer.Add((Draw-Card))
+        [void]$player.Add((Draw-Card))
+        [void]$dealer.Add((Draw-Card))
 
         $payout = 0
         $message = ''
@@ -622,7 +622,7 @@ function Play-Blackjack {
                 Show-BlackjackTable -State $state -Bet $bet -Player $player -Dealer $dealer -Message '[h] hit   [s] stand   [q] quit game'
                 $turn = Read-Choice
                 switch ($turn) {
-                    'h' { [void]$player.Add((Draw-Card -Deck $deck)) }
+                    'h' { [void]$player.Add((Draw-Card)) }
                     'q' {
                         $roundQuit = $true
                         break
@@ -643,7 +643,7 @@ function Play-Blackjack {
 
             if ((Get-HandTotal -Hand $player) -le 21 -and $message -eq '') {
                 while (Get-DealerShouldHit -Hand $dealer) {
-                    [void]$dealer.Add((Draw-Card -Deck $deck))
+                    [void]$dealer.Add((Draw-Card))
                 }
 
                 Show-BlackjackTable -State $state -Bet $bet -Player $player -Dealer $dealer -RevealDealer
@@ -1151,13 +1151,13 @@ function Play-VideoPoker {
         $state.passive_earned = 0
         Save-State -State $state
 
-        $deck = New-ShuffledDeck
+        $script:CurrentDeck = New-ShuffledDeck
         $hand = @(
-            (Draw-Card -Deck $deck),
-            (Draw-Card -Deck $deck),
-            (Draw-Card -Deck $deck),
-            (Draw-Card -Deck $deck),
-            (Draw-Card -Deck $deck)
+            (Draw-Card),
+            (Draw-Card),
+            (Draw-Card),
+            (Draw-Card),
+            (Draw-Card)
         )
         $held = @( $false, $false, $false, $false, $false )
 
@@ -1187,7 +1187,7 @@ function Play-VideoPoker {
 
         for ($i = 0; $i -lt $hand.Count; $i++) {
             if (-not $held[$i]) {
-                $hand[$i] = Draw-Card -Deck $deck
+                $hand[$i] = Draw-Card
             }
         }
 
