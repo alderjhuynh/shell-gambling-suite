@@ -217,12 +217,12 @@ function Write-BoxLine {
         $content = $content.Substring(0, $innerWidth)
     }
 
-    Write-Host ('║{0}║' -f $content.PadRight($innerWidth))
+    Write-Host ('|{0}|' -f $content.PadRight($innerWidth))
 }
 
 function Write-BoxDivider {
     param([int]$Width = 44)
-    Write-Host ('╠{0}╣' -f (Get-RepeatText -Character '═' -Count (Get-BoxInnerWidth -Width $Width)))
+    Write-Host ('+{0}+' -f (Get-RepeatText -Character '-' -Count (Get-BoxInnerWidth -Width $Width)))
 }
 
 function Get-CenteredText {
@@ -250,7 +250,7 @@ function Show-GameBanner {
     )
 
     Clear-Host
-    Write-Host ('╔{0}╗' -f (Get-RepeatText -Character '═' -Count (Get-BoxInnerWidth -Width $Width)))
+    Write-Host ('+{0}+' -f (Get-RepeatText -Character '=' -Count (Get-BoxInnerWidth -Width $Width)))
     Write-BoxLine -Text (Get-CenteredText -Text $Title -Width $Width) -Width $Width
     Write-BoxLine -Text (Get-CenteredText -Text 'Aura Gambling Suite' -Width $Width) -Width $Width
     Write-BoxDivider -Width $Width
@@ -261,7 +261,7 @@ function Show-GameBanner {
         Write-BoxLine -Text ('  Credits: {0}   +{1} in {2}' -f $State.credits, $script:PassiveCreditAmount, (Get-TimerText -State $State)) -Width $Width
     }
 
-    Write-Host ('╚{0}╝' -f (Get-RepeatText -Character '═' -Count (Get-BoxInnerWidth -Width $Width)))
+    Write-Host ('+{0}+' -f (Get-RepeatText -Character '=' -Count (Get-BoxInnerWidth -Width $Width)))
     Write-Host ''
 }
 
@@ -357,10 +357,10 @@ function Get-SuitGlyph {
     param([string]$Suit)
 
     switch ($Suit) {
-        'S' { return '♠' }
-        'H' { return '♥' }
-        'D' { return '♦' }
-        'C' { return '♣' }
+        'S' { return 'S' }
+        'H' { return 'H' }
+        'D' { return 'D' }
+        'C' { return 'C' }
         default { return $Suit }
     }
 }
@@ -374,11 +374,11 @@ function Get-CardLines {
 
     if ($Hidden) {
         return @(
-            '┌─────┐',
-            '│░░░░░│',
-            '│░░░░░│',
-            '│░░░░░│',
-            '└─────┘'
+            '.-----.',
+            '|#####|',
+            '|#####|',
+            '|#####|',
+            '''-----'''
         )
     }
 
@@ -389,20 +389,20 @@ function Get-CardLines {
 
     if ($Held) {
         return @(
-            '┏━━━━━┓',
-            ('┃{0}   ┃' -f $left),
-            ('┃  {0}  ┃' -f $glyph),
-            ('┃   {0}┃' -f $right),
-            '┗━━━━━┛'
+            '.=====.',
+            ('||{0}  ||' -f $left),
+            ('|| {0}  ||' -f $glyph),
+            ('||  {0}||' -f $right),
+            '''====='''
         )
     }
 
     return @(
-        '┌─────┐',
-        ('│{0}   │' -f $left),
-        ('│  {0}  │' -f $glyph),
-        ('│   {0}│' -f $right),
-        '└─────┘'
+        '.-----.',
+        ('|{0}   |' -f $left),
+        ('|  {0}  |' -f $glyph),
+        ('|   {0}|' -f $right),
+        '''-----'''
     )
 }
 
@@ -965,11 +965,11 @@ function Play-Slots {
         Save-State -State $state
 
         Show-GameBanner -Title 'SLOT MACHINE' -State $state -Bet $bet -Width 44
-        Write-Host '╔══════════════════════╗'
-        Write-Host '║     SLOT MACHINE     ║'
-        Write-Host '╠══════════════════════╣'
-        Write-Host ('║   {0,-2}    {1,-2}    {2,-2}   ║' -f $reels[0], $reels[1], $reels[2])
-        Write-Host '╚══════════════════════╝'
+        Write-Host '+----------------------+'
+        Write-Host '|     SLOT MACHINE     |'
+        Write-Host '+----------------------+'
+        Write-Host ('|   {0,-2}    {1,-2}    {2,-2}   |' -f $reels[0], $reels[1], $reels[2])
+        Write-Host '+----------------------+'
         Write-Host ''
         if ($result.Payout -gt 0) {
             Write-Host ('{0}. +{1} credits.' -f $result.Label, $result.Payout)
@@ -986,20 +986,20 @@ function Show-VideoPokerPaytable {
     param([int]$Bet)
 
     Clear-Host
-    Write-Host '╔══════════════════════════════════════════════════╗'
-    Write-Host '║               VIDEO POKER PAY TABLE             ║'
-    Write-Host '╠══════════════════════════════════════════════════╣'
-    Write-Host ('║  Royal Flush       {0,8} credits             ║' -f ($Bet * 250))
-    Write-Host ('║  Straight Flush    {0,8} credits             ║' -f ($Bet * 50))
-    Write-Host ('║  Four of a Kind    {0,8} credits             ║' -f ($Bet * 25))
-    Write-Host ('║  Full House        {0,8} credits             ║' -f ($Bet * 9))
-    Write-Host ('║  Flush             {0,8} credits             ║' -f ($Bet * 6))
-    Write-Host ('║  Straight          {0,8} credits             ║' -f ($Bet * 4))
-    Write-Host ('║  Three of a Kind   {0,8} credits             ║' -f ($Bet * 3))
-    Write-Host ('║  Two Pair          {0,8} credits             ║' -f ($Bet * 2))
-    Write-Host ('║  Jacks or Better   {0,8} credits             ║' -f $Bet)
-    Write-Host ('║  Nothing           {0,8} credits             ║' -f 0)
-    Write-Host '╚══════════════════════════════════════════════════╝'
+    Write-Host '+--------------------------------------------------+'
+    Write-Host '|               VIDEO POKER PAY TABLE             |'
+    Write-Host '+--------------------------------------------------+'
+    Write-Host ('|  Royal Flush       {0,8} credits               |' -f ($Bet * 250))
+    Write-Host ('|  Straight Flush    {0,8} credits               |' -f ($Bet * 50))
+    Write-Host ('|  Four of a Kind    {0,8} credits               |' -f ($Bet * 25))
+    Write-Host ('|  Full House        {0,8} credits               |' -f ($Bet * 9))
+    Write-Host ('|  Flush             {0,8} credits               |' -f ($Bet * 6))
+    Write-Host ('|  Straight          {0,8} credits               |' -f ($Bet * 4))
+    Write-Host ('|  Three of a Kind   {0,8} credits               |' -f ($Bet * 3))
+    Write-Host ('|  Two Pair          {0,8} credits               |' -f ($Bet * 2))
+    Write-Host ('|  Jacks or Better   {0,8} credits               |' -f $Bet)
+    Write-Host ('|  Nothing           {0,8} credits               |' -f 0)
+    Write-Host '+--------------------------------------------------+'
     Read-Host 'Press Enter'
 }
 
@@ -1272,7 +1272,7 @@ function Show-ScratcherGrid {
     $index = 0
     $cellWidth = 4
     $rowWidth = ($Ticket.Cols * ($cellWidth + 1)) + 1
-    Write-Host ('  ┌{0}┐' -f (Get-RepeatText -Character '─' -Count ($rowWidth - 2)))
+    Write-Host ('  +{0}+' -f (Get-RepeatText -Character '-' -Count ($rowWidth - 2)))
     for ($row = 0; $row -lt $Ticket.Rows; $row++) {
         $parts = @()
         for ($col = 0; $col -lt $Ticket.Cols; $col++) {
@@ -1283,9 +1283,9 @@ function Show-ScratcherGrid {
             }
             $index += 1
         }
-        Write-Host ('  │{0}│' -f ($parts -join '│'))
+        Write-Host ('  |{0}|' -f ($parts -join '|'))
     }
-    Write-Host ('  └{0}┘' -f (Get-RepeatText -Character '─' -Count ($rowWidth - 2)))
+    Write-Host ('  +{0}+' -f (Get-RepeatText -Character '-' -Count ($rowWidth - 2)))
 
     Write-Host ''
     if ($Message) {
