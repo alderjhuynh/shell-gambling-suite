@@ -10,13 +10,24 @@ A small collection of terminal gambling games with shared credits across the who
 
 ## Commands
 
-After installation, these commands are available on every supported platform:
+After installation, these commands are available:
+
+macOS / Linux:
 
 - `bj` -> blackjack
 - `cf` -> coinflip
 - `rps` -> rock paper scissors
 - `sc` -> scratchers
 - `sl` -> slots
+- `vp` -> video poker
+
+Windows:
+
+- `bj` -> blackjack
+- `cf` -> coinflip
+- `rps` -> rock paper scissors
+- `scr` -> scratchers
+- `slt` -> slots
 - `vp` -> video poker
 
 ## Install
