@@ -1317,9 +1317,11 @@ function Get-ScratcherResult {
         }
     }
 
-    foreach ($key in @($Ticket.Paytable.Keys | Sort-Object -Descending)) {
-        if ($bestCount -ge [int]$key) {
-            $winnings = [math]::Floor($Ticket.Cost * ([int]$Ticket.Paytable[$key]) / 100)
+    foreach ($entry in @($Ticket.Paytable.GetEnumerator() | Sort-Object { [int]$_.Key } -Descending)) {
+        if ($bestCount -ge [int]$entry.Key) {
+            # OrderedDictionary also has a positional int indexer, so use the entry value
+            # directly instead of looking up numeric keys again.
+            $winnings = [math]::Floor($Ticket.Cost * ([int]$entry.Value) / 100)
             return @{
                 Winnings = $winnings
                 Label = ('{0} x {1}' -f $bestCount, $bestSymbol)
