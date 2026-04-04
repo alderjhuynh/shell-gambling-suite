@@ -2,7 +2,7 @@
 
 set -e
 
-COMMAND_NAMES=("bj bash" "sc bash" "cf bash" "rps bash" "sl bash" "vp bash")
+COMMAND_NAMES=("bj" "sc" "cf" "rps" "sl" "vp")
 COMMAND_FILES=("blackjack.sh" "scratchers.sh" "coinflip.sh" "rock_paper_scissors.sh" "slots.sh" "video_poker.sh")
 
 TARGET_DIR="/usr/local/bin"
