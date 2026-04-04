@@ -56,22 +56,25 @@ if ($Action -eq 'add' -and $seen.Add($target)) {
 
 [Environment]::SetEnvironmentVariable('Path', ($updatedEntries -join ';'), 'User')
 
-Add-Type -Namespace Aura -Name NativeMethods -MemberDefinition @"
+Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 
-public static class NativeMethods
+namespace Aura
 {
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-    public static extern IntPtr SendMessageTimeout(
-        IntPtr hWnd,
-        int Msg,
-        IntPtr wParam,
-        string lParam,
-        int fuFlags,
-        int uTimeout,
-        out IntPtr lpdwResult
-    );
+    public static class NativeMethods
+    {
+        [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        public static extern IntPtr SendMessageTimeout(
+            IntPtr hWnd,
+            int Msg,
+            IntPtr wParam,
+            string lParam,
+            int fuFlags,
+            int uTimeout,
+            out IntPtr lpdwResult
+        );
+    }
 }
 "@
 
