@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 SAVEFILE="$HOME/aura_gambling_suite_bash.txt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
 PASSIVE_CREDIT_AMOUNT=10
 PASSIVE_CREDIT_INTERVAL=300
@@ -27,42 +29,6 @@ declare -a DEALER_HAND=()
 
 WIDTH=54
 
-
-load_state() {
-    CREDITS=100
-    PASSIVE_EARNED=0
-    NEXT_CREDIT_TIME=$(( $(date +%s) + PASSIVE_CREDIT_INTERVAL ))
-
-    if [[ -f "$SAVEFILE" ]]; then
-        while IFS='=' read -r key val; do
-            case "$key" in
-                credits)        CREDITS=$val ;;
-                passive_earned) PASSIVE_EARNED=$val ;;
-                next_credit_time) NEXT_CREDIT_TIME=$val ;;
-            esac
-        done < "$SAVEFILE"
-
-        (( PASSIVE_EARNED < 0 )) && PASSIVE_EARNED=0
-        (( PASSIVE_EARNED > PASSIVE_CREDIT_CAP )) && PASSIVE_EARNED=$PASSIVE_CREDIT_CAP
-
-        NOW=$(date +%s)
-        if (( NEXT_CREDIT_TIME <= NOW )); then
-            MISSED=$(( (NOW - NEXT_CREDIT_TIME) / PASSIVE_CREDIT_INTERVAL + 1 ))
-            POTENTIAL=$(( MISSED * PASSIVE_CREDIT_AMOUNT ))
-            ALLOWED=$(( PASSIVE_CREDIT_CAP - PASSIVE_EARNED ))
-            (( ALLOWED < 0 )) && ALLOWED=0
-            GAIN=$(( POTENTIAL < ALLOWED ? POTENTIAL : ALLOWED ))
-            CREDITS=$(( CREDITS + GAIN ))
-            PASSIVE_EARNED=$(( PASSIVE_EARNED + GAIN ))
-            NEXT_CREDIT_TIME=$(( NOW + PASSIVE_CREDIT_INTERVAL ))
-        fi
-    fi
-}
-
-save_state() {
-    printf 'credits=%d\npassive_earned=%d\nnext_credit_time=%d\n' \
-        "$CREDITS" "$PASSIVE_EARNED" "$NEXT_CREDIT_TIME" > "$SAVEFILE"
-}
 
 fresh_deck() {
     DECK=()
@@ -262,6 +228,54 @@ flash_result() {
     echo
 }
 
+opening_hand_score() {
+    local player_total dealer_up score
+    player_total=$(hand_total "${PLAYER_HAND[@]}")
+    dealer_up=$(hand_total "${DEALER_HAND[0]}")
+    score=$(( player_total * 10 - dealer_up ))
+    is_blackjack "${PLAYER_HAND[@]}" && score=$(( score + 1000 ))
+    printf '%d\n' "$score"
+}
+
+deal_opening_hands() {
+    local lucky_active=0
+    LUCKY_NOTE=""
+    if consume_lucky; then
+        lucky_active=1
+        LUCKY_NOTE="Lucky steered the opening deal your way."
+    fi
+
+    if (( lucky_active == 0 )); then
+        PLAYER_HAND=()
+        DEALER_HAND=()
+        fresh_deck
+        deal_to_player; deal_to_player
+        deal_to_dealer; deal_to_dealer
+        return
+    fi
+
+    local best_score="" attempt current_score
+    local -a best_player best_dealer best_deck
+    for attempt in 1 2 3; do
+        PLAYER_HAND=()
+        DEALER_HAND=()
+        fresh_deck
+        deal_to_player; deal_to_player
+        deal_to_dealer; deal_to_dealer
+        current_score=$(opening_hand_score)
+        if [[ -z "$best_score" || "$current_score" -gt "$best_score" ]]; then
+            best_score=$current_score
+            best_player=("${PLAYER_HAND[@]}")
+            best_dealer=("${DEALER_HAND[@]}")
+            best_deck=("${DECK[@]}")
+        fi
+    done
+
+    PLAYER_HAND=("${best_player[@]}")
+    DEALER_HAND=("${best_dealer[@]}")
+    DECK=("${best_deck[@]}")
+}
+
 dealer_play() {
     draw_table 0 "${CYAN}Dealer reveals hole card…${RESET}" "dealer"
     sleep 1
@@ -280,11 +294,7 @@ dealer_play() {
 }
 
 play_round() {
-    PLAYER_HAND=()
-    DEALER_HAND=()
-    fresh_deck
-    deal_to_player; deal_to_player
-    deal_to_dealer; deal_to_dealer
+    deal_opening_hands
 
     draw_table 1 "${WHITE}[h] Hit   [s] Stand   [q] Quit${RESET}" "playing"
 
@@ -292,13 +302,13 @@ play_round() {
         if is_blackjack "${DEALER_HAND[@]}"; then
             draw_table 0 "${MAGENTA}${BOLD}BLACKJACK! Pays 3:2${RESET}" "result"
             sleep 1.5
-            ROUND_DELTA=0; ROUND_MSG="PUSH — both blackjack"; ROUND_COLOR="$YELLOW"
+            ROUND_PAYOUT=$BET; ROUND_MSG="PUSH — both blackjack"; ROUND_COLOR="$YELLOW"
             return
         fi
         draw_table 0 "${MAGENTA}${BOLD}BLACKJACK! Pays 3:2${RESET}" "result"
         sleep 1.5
-        local win=$(( BET + BET / 2 ))
-        ROUND_DELTA=$win; ROUND_MSG="BLACKJACK! +${win} credits"; ROUND_COLOR="$MAGENTA"
+        ROUND_PAYOUT=$(( BET * 5 / 2 ))
+        ROUND_MSG="BLACKJACK! Huge payout"; ROUND_COLOR="$MAGENTA"
         return
     fi
 
@@ -310,7 +320,7 @@ play_round() {
         if (( p_total > 21 )); then
             draw_table 1 "${RED}${BOLD}BUST!${RESET}" "bust"
             sleep 1
-            ROUND_DELTA=$(( -BET ))
+            ROUND_PAYOUT=0
             ROUND_MSG="BUST — -${BET} credits"
             ROUND_COLOR="$RED"
             outcome_early=1
@@ -328,7 +338,7 @@ play_round() {
         choice=$(printf '%s' "$choice" | tr '[:upper:]' '[:lower:]')
 
         case "$choice" in
-            q) ROUND_DELTA=""; return ;;
+            q) ROUND_PAYOUT=""; return ;;
             h) deal_to_player ;;
             s) break ;;
         esac
@@ -343,30 +353,13 @@ play_round() {
     d=$(hand_total "${DEALER_HAND[@]}")
 
     if (( d > 21 )); then
-        ROUND_DELTA=$BET; ROUND_MSG="DEALER BUSTS! +${BET} credits"; ROUND_COLOR="$GREEN"
+        ROUND_PAYOUT=$(( BET * 2 )); ROUND_MSG="DEALER BUSTS!"; ROUND_COLOR="$GREEN"
     elif (( p > d )); then
-        ROUND_DELTA=$BET; ROUND_MSG="YOU WIN! +${BET} credits"; ROUND_COLOR="$GREEN"
+        ROUND_PAYOUT=$(( BET * 2 )); ROUND_MSG="YOU WIN!"; ROUND_COLOR="$GREEN"
     elif (( p < d )); then
-        ROUND_DELTA=$(( -BET )); ROUND_MSG="DEALER WINS. -${BET} credits"; ROUND_COLOR="$RED"
+        ROUND_PAYOUT=0; ROUND_MSG="DEALER WINS."; ROUND_COLOR="$RED"
     else
-        ROUND_DELTA=0; ROUND_MSG="PUSH — tie"; ROUND_COLOR="$YELLOW"
-    fi
-}
-
-check_passive_credits() {
-    local now
-    now=$(date +%s)
-    if (( now >= NEXT_CREDIT_TIME )); then
-        if (( PASSIVE_EARNED < PASSIVE_CREDIT_CAP )); then
-            local gain
-            gain=$(( PASSIVE_CREDIT_AMOUNT < (PASSIVE_CREDIT_CAP - PASSIVE_EARNED) \
-                     ? PASSIVE_CREDIT_AMOUNT : (PASSIVE_CREDIT_CAP - PASSIVE_EARNED) ))
-            CREDITS=$(( CREDITS + gain ))
-            PASSIVE_EARNED=$(( PASSIVE_EARNED + gain ))
-            PENDING_BONUS=$(( PENDING_BONUS + gain ))
-        fi
-        NEXT_CREDIT_TIME=$(( now + PASSIVE_CREDIT_INTERVAL ))
-        save_state
+        ROUND_PAYOUT=$BET; ROUND_MSG="PUSH — tie"; ROUND_COLOR="$YELLOW"
     fi
 }
 
@@ -386,6 +379,7 @@ main() {
 
     while true; do
         check_passive_credits
+        clamp_bet_to_limit 500 10
 
         if (( PENDING_BONUS > 0 )); then
             echo ""
@@ -400,8 +394,14 @@ main() {
         ttl=$(( NEXT_CREDIT_TIME - now ))
         (( ttl < 0 )) && ttl=0
         m=$(( ttl / 60 )); s=$(( ttl % 60 ))
-        printf "  ${YELLOW}Credits: ${BOLD}%d${RESET}   ${CYAN}Bet: ${BOLD}%d${RESET}   ${DIM}+%d in %dm %02ds${RESET}\n" \
-            "$CREDITS" "$BET" "$PASSIVE_CREDIT_AMOUNT" "$m" "$s"
+        local max_bet
+        max_bet=$(current_max_bet_limit 500)
+        printf "  ${YELLOW}Credits: ${BOLD}%d${RESET}   ${CYAN}Bet: ${BOLD}%d${RESET}   ${WHITE}Max: ${BOLD}%d${RESET}   ${DIM}+%d in %dm %02ds${RESET}\n" \
+            "$CREDITS" "$BET" "$max_bet" "$PASSIVE_CREDIT_AMOUNT" "$m" "$s"
+        printf "  ${DIM}Items:${RESET} 2x: %s  Lucky: %s  Shield: %s\n" \
+            "$( (( ITEM_2X_WIN )) && printf 'ON' || printf 'off' )" \
+            "$( (( ITEM_LUCKY )) && printf 'ON' || printf 'off' )" \
+            "$( (( ITEM_SHIELD )) && printf 'ON' || printf 'off' )"
 
         if (( CREDITS <= 0 )); then
             echo ""
@@ -435,7 +435,7 @@ main() {
                 break
                 ;;
             b)
-                local max_bet=$(( CREDITS < 500 ? CREDITS : 500 ))
+                max_bet=$(current_max_bet_limit 500)
                 read -r -p "  ${WHITE}ENTER BET (10–${max_bet}): ${RESET}" new_bet
                 if [[ "$new_bet" =~ ^[0-9]+$ ]]; then
                     (( new_bet < 10  )) && new_bet=10
@@ -457,10 +457,10 @@ main() {
         PASSIVE_EARNED=0
         save_state
 
-        ROUND_DELTA="" ROUND_MSG="" ROUND_COLOR=""
+        ROUND_PAYOUT="" ROUND_MSG="" ROUND_COLOR=""
         play_round
 
-        if [[ -z "$ROUND_DELTA" ]]; then
+        if [[ -z "$ROUND_PAYOUT" ]]; then
             CREDITS=$(( CREDITS + BET ))
             save_state
             echo ""
@@ -469,8 +469,18 @@ main() {
             break
         fi
 
-        CREDITS=$(( CREDITS + BET + ROUND_DELTA ))
+        apply_payout_items "$BET" "$ROUND_PAYOUT"
+        CREDITS=$(( CREDITS + FINAL_PAYOUT ))
         save_state
+
+        if [[ -n "$LUCKY_NOTE" ]]; then
+            ROUND_MSG="${ROUND_MSG} ${LUCKY_NOTE}"
+        fi
+        if (( ITEM_USED_2X )); then
+            ROUND_MSG="${ROUND_MSG} 2x Win doubled the payout."
+        elif (( ITEM_USED_SHIELD )); then
+            ROUND_MSG="${ROUND_MSG} Shield blocked ${ITEM_SHIELD_BLOCKED} credits."
+        fi
 
         flash_result "$ROUND_MSG" "$ROUND_COLOR"
         echo ""
