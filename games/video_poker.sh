@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 SAVEFILE="$HOME/aura_gambling_suite_bash.txt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
 PASSIVE_CREDIT_AMOUNT=10
 PASSIVE_CREDIT_INTERVAL=300
@@ -22,59 +24,6 @@ PAY_NAMES=("Royal Flush" "Straight Flush" "Four of a Kind" "Full House" "Flush" 
 PAY_MULTS=(250 50 25 9 6 4 3 2 1 0)
 
 WIDTH=62
-
-load_state() {
-    CREDITS=100
-    PASSIVE_EARNED=0
-    NEXT_CREDIT_TIME=$(( $(date +%s) + PASSIVE_CREDIT_INTERVAL ))
-
-    if [[ -f "$SAVEFILE" ]]; then
-        while IFS='=' read -r key val; do
-            case "$key" in
-                credits) CREDITS=$val ;;
-                passive_earned) PASSIVE_EARNED=$val ;;
-                next_credit_time) NEXT_CREDIT_TIME=$val ;;
-            esac
-        done < "$SAVEFILE"
-
-        (( PASSIVE_EARNED < 0 )) && PASSIVE_EARNED=0
-        (( PASSIVE_EARNED > PASSIVE_CREDIT_CAP )) && PASSIVE_EARNED=$PASSIVE_CREDIT_CAP
-
-        local now missed potential allowed gain
-        now=$(date +%s)
-        if (( NEXT_CREDIT_TIME <= now )); then
-            missed=$(( (now - NEXT_CREDIT_TIME) / PASSIVE_CREDIT_INTERVAL + 1 ))
-            potential=$(( missed * PASSIVE_CREDIT_AMOUNT ))
-            allowed=$(( PASSIVE_CREDIT_CAP - PASSIVE_EARNED ))
-            (( allowed < 0 )) && allowed=0
-            gain=$(( potential < allowed ? potential : allowed ))
-            CREDITS=$(( CREDITS + gain ))
-            PASSIVE_EARNED=$(( PASSIVE_EARNED + gain ))
-            NEXT_CREDIT_TIME=$(( now + PASSIVE_CREDIT_INTERVAL ))
-        fi
-    fi
-}
-
-save_state() {
-    printf 'credits=%d\npassive_earned=%d\nnext_credit_time=%d\n' \
-        "$CREDITS" "$PASSIVE_EARNED" "$NEXT_CREDIT_TIME" > "$SAVEFILE"
-}
-
-check_passive_credits() {
-    local now gain avail
-    now=$(date +%s)
-    if (( now >= NEXT_CREDIT_TIME )); then
-        if (( PASSIVE_EARNED < PASSIVE_CREDIT_CAP )); then
-            avail=$(( PASSIVE_CREDIT_CAP - PASSIVE_EARNED ))
-            gain=$(( PASSIVE_CREDIT_AMOUNT < avail ? PASSIVE_CREDIT_AMOUNT : avail ))
-            CREDITS=$(( CREDITS + gain ))
-            PASSIVE_EARNED=$(( PASSIVE_EARNED + gain ))
-            PENDING_BONUS=$(( PENDING_BONUS + gain ))
-        fi
-        NEXT_CREDIT_TIME=$(( now + PASSIVE_CREDIT_INTERVAL ))
-        save_state
-    fi
-}
 
 fmt_time() {
     local total=$1
@@ -207,6 +156,11 @@ draw_table() {
         "$YELLOW" "$BOLD" "$CREDITS" "$RESET" \
         "$CYAN" "$BOLD" "$BET" "$RESET" \
         "$DIM" "$PASSIVE_CREDIT_AMOUNT" "$(fmt_time "$ttl")" "$RESET"
+    printf '  %sItems:%s 2x: %s Lucky: %s Shield: %s\n' \
+        "$DIM" "$RESET" \
+        "$( (( ITEM_2X_WIN )) && printf 'ON' || printf 'off' )" \
+        "$( (( ITEM_LUCKY )) && printf 'ON' || printf 'off' )" \
+        "$( (( ITEM_SHIELD )) && printf 'ON' || printf 'off' )"
     printf '%s%s╠%s╣%s\n' "$YELLOW" "$BOLD" "$(hr)" "$RESET"
 
     if [[ -n "$result_name" && "$result_name" != "Nothing" ]]; then
@@ -359,15 +313,45 @@ evaluate_hand() {
 }
 
 deal_hand() {
-    fresh_deck
-    HAND_RANKS=()
-    HAND_SUITS=()
-    local i
-    for (( i=0; i<5; i++ )); do
-        pop_card
-        HAND_RANKS+=("${DRAWN_CARD%%|*}")
-        HAND_SUITS+=("${DRAWN_CARD##*|}")
+    local lucky_active=0
+    LUCKY_NOTE=""
+    if consume_lucky; then
+        lucky_active=1
+        LUCKY_NOTE="Lucky dealt you the best of three opening hands."
+    fi
+
+    local best_score="" attempt current_score
+    local -a best_ranks best_suits best_deck
+
+    for attempt in 1 2 3; do
+        fresh_deck
+        HAND_RANKS=()
+        HAND_SUITS=()
+        local i
+        for (( i=0; i<5; i++ )); do
+            pop_card
+            HAND_RANKS+=("${DRAWN_CARD%%|*}")
+            HAND_SUITS+=("${DRAWN_CARD##*|}")
+        done
+
+        evaluate_hand
+        current_score=$PAYOUT
+
+        if (( lucky_active == 0 )); then
+            return
+        fi
+
+        if [[ -z "$best_score" || "$current_score" -gt "$best_score" ]]; then
+            best_score=$current_score
+            best_ranks=("${HAND_RANKS[@]}")
+            best_suits=("${HAND_SUITS[@]}")
+            best_deck=("${DECK[@]}")
+        fi
     done
+
+    HAND_RANKS=("${best_ranks[@]}")
+    HAND_SUITS=("${best_suits[@]}")
+    DECK=("${best_deck[@]}")
 }
 
 redraw_hand() {
@@ -454,11 +438,13 @@ play_round() {
     redraw_hand
     evaluate_hand
 
+    apply_payout_items "$BET" "$PAYOUT"
+    PAYOUT=$FINAL_PAYOUT
     CREDITS=$(( CREDITS + PAYOUT ))
     save_state
 
     local color="$RED"
-    if (( PAYOUT > 0 )); then
+    if (( PAYOUT > BET )); then
         color="$GREEN"
         [[ "$HAND_NAME" == "Royal Flush" ]] && color="$MAGENTA"
         [[ "$HAND_NAME" == "Straight Flush" || "$HAND_NAME" == "Four of a Kind" ]] && color="$YELLOW"
@@ -466,11 +452,17 @@ play_round() {
 
     HELD=(0 1 2 3 4)
     draw_table "${WHITE}[ENTER] Play again   [q] Quit${RESET}" "result" "$HAND_NAME" "0"
-    if (( PAYOUT > 0 )); then
+    if (( PAYOUT > BET )); then
         flash_result "${HAND_NAME}! +${PAYOUT} credits" "$color"
+    elif (( PAYOUT == BET )); then
+        flash_result "${HAND_NAME}! Bet returned" "$YELLOW"
+    elif (( ITEM_USED_SHIELD )); then
+        flash_result "Shield blocked ${ITEM_SHIELD_BLOCKED} credits" "$YELLOW"
     else
         flash_result "No win. -${BET} credits" "$color"
     fi
+    [[ -n "$LUCKY_NOTE" ]] && printf '  %s%s%s\n' "$CYAN" "$LUCKY_NOTE" "$RESET"
+    (( ITEM_USED_2X )) && printf '  %s2x Win doubled the payout.%s\n' "$CYAN" "$RESET"
 
     read -r -p "  > " again
     again=$(printf '%s' "$again" | tr '[:upper:]' '[:lower:]')
@@ -494,6 +486,7 @@ main() {
 
     while true; do
         check_passive_credits
+        clamp_bet_to_limit 500 10
 
         if (( PENDING_BONUS > 0 )); then
             printf '\n  %s%s+%d FREE CREDITS!%s\n\n' \
@@ -506,9 +499,13 @@ main() {
         now=$(date +%s)
         ttl=$(( NEXT_CREDIT_TIME - now ))
         (( ttl < 0 )) && ttl=0
-        printf '  %sCredits: %s%d%s   %sBet: %s%d%s   %s+%d in %s%s\n' \
+        local max_bet
+        max_bet=$(current_max_bet_limit 500)
+
+        printf '  %sCredits: %s%d%s   %sBet: %s%d%s   %sMax: %s%d%s   %s+%d in %s%s\n' \
             "$YELLOW" "$BOLD" "$CREDITS" "$RESET" \
             "$CYAN" "$BOLD" "$BET" "$RESET" \
+            "$WHITE" "$BOLD" "$max_bet" "$RESET" \
             "$DIM" "$PASSIVE_CREDIT_AMOUNT" "$(fmt_time "$ttl")" "$RESET"
 
         if (( CREDITS <= 0 )); then
@@ -536,8 +533,7 @@ main() {
                 continue
                 ;;
             b)
-                local max_bet
-                max_bet=$(( CREDITS < 500 ? CREDITS : 500 ))
+                max_bet=$(current_max_bet_limit 500)
                 (( max_bet < 10 )) && max_bet=10
                 read -r -p "  ENTER BET (10-${max_bet}): " new_bet
                 if [[ "$new_bet" =~ ^[0-9]+$ ]]; then
