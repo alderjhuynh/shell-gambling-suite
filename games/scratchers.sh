@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 SAVEFILE="$HOME/aura_gambling_suite_bash.txt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
 PASSIVE_CREDIT_AMOUNT=10
 PASSIVE_CREDIT_INTERVAL=300
@@ -50,61 +52,6 @@ TICKET_3_PAY_3=60
 TICKET_3_PAY_2=30
 
 
-load_state() {
-    CREDITS=100
-    PASSIVE_EARNED=0
-    NEXT_CREDIT_TIME=$(( $(date +%s) + PASSIVE_CREDIT_INTERVAL ))
-
-    if [[ -f "$SAVEFILE" ]]; then
-        while IFS='=' read -r key val; do
-            case "$key" in
-                credits)           CREDITS=$val ;;
-                passive_earned)    PASSIVE_EARNED=$val ;;
-                next_credit_time)  NEXT_CREDIT_TIME=$val ;;
-            esac
-        done < "$SAVEFILE"
-
-        (( PASSIVE_EARNED < 0 )) && PASSIVE_EARNED=0
-        (( PASSIVE_EARNED > PASSIVE_CREDIT_CAP )) && PASSIVE_EARNED=$PASSIVE_CREDIT_CAP
-
-        local NOW
-        NOW=$(date +%s)
-        if (( NEXT_CREDIT_TIME <= NOW )); then
-            local MISSED POTENTIAL ALLOWED GAIN
-            MISSED=$(( (NOW - NEXT_CREDIT_TIME) / PASSIVE_CREDIT_INTERVAL + 1 ))
-            POTENTIAL=$(( MISSED * PASSIVE_CREDIT_AMOUNT ))
-            ALLOWED=$(( PASSIVE_CREDIT_CAP - PASSIVE_EARNED ))
-            (( ALLOWED < 0 )) && ALLOWED=0
-            GAIN=$(( POTENTIAL < ALLOWED ? POTENTIAL : ALLOWED ))
-            CREDITS=$(( CREDITS + GAIN ))
-            PASSIVE_EARNED=$(( PASSIVE_EARNED + GAIN ))
-            NEXT_CREDIT_TIME=$(( NOW + PASSIVE_CREDIT_INTERVAL ))
-        fi
-    fi
-}
-
-save_state() {
-    printf 'credits=%d\npassive_earned=%d\nnext_credit_time=%d\n' \
-        "$CREDITS" "$PASSIVE_EARNED" "$NEXT_CREDIT_TIME" > "$SAVEFILE"
-}
-
-check_passive_credits() {
-    local NOW
-    NOW=$(date +%s)
-    if (( NOW >= NEXT_CREDIT_TIME )); then
-        if (( PASSIVE_EARNED < PASSIVE_CREDIT_CAP )); then
-            local AVAIL GAIN
-            AVAIL=$(( PASSIVE_CREDIT_CAP - PASSIVE_EARNED ))
-            GAIN=$(( PASSIVE_CREDIT_AMOUNT < AVAIL ? PASSIVE_CREDIT_AMOUNT : AVAIL ))
-            CREDITS=$(( CREDITS + GAIN ))
-            PASSIVE_EARNED=$(( PASSIVE_EARNED + GAIN ))
-            PENDING_BONUS=$(( PENDING_BONUS + GAIN ))
-        fi
-        NEXT_CREDIT_TIME=$(( NOW + PASSIVE_CREDIT_INTERVAL ))
-        save_state
-    fi
-}
-
 generate_ticket() {
     local rows=$1 cols=$2
     shift 2
@@ -112,7 +59,15 @@ generate_ticket() {
     local total=$(( rows * cols ))
     local nsym=${#symbols[@]}
 
-    local roll=$(( RANDOM % 1000 ))
+    local roll_limit=1000
+    if consume_lucky; then
+        roll_limit=800
+        LUCKY_NOTE="Lucky improved the ticket odds."
+    else
+        LUCKY_NOTE=""
+    fi
+
+    local roll=$(( RANDOM % roll_limit ))
     local win_count=0
     if   (( roll < 2  )); then win_count=5
     elif (( roll < 8  )); then win_count=4
@@ -205,6 +160,11 @@ draw_header() {
         "$color" "$BOLD" "$RESET" \
         "$YELLOW" "$BOLD" "$CREDITS" "$RESET" \
         "$DIM" "$PASSIVE_CREDIT_AMOUNT" "$(timer_str)" "$RESET"
+    printf '  %sItems:%s 2x: %s Lucky: %s Shield: %s\n' \
+        "$DIM" "$RESET" \
+        "$( (( ITEM_2X_WIN )) && printf 'ON' || printf 'off' )" \
+        "$( (( ITEM_LUCKY )) && printf 'ON' || printf 'off' )" \
+        "$( (( ITEM_SHIELD )) && printf 'ON' || printf 'off' )"
     printf '%s%s║%s  %s%sTicket: %s%s\n' \
         "$color" "$BOLD" "$RESET" "$color" "$BOLD" "$name" "$RESET"
     printf '%s%s╠══════════════════════════════════════════╣%s\n' "$color" "$BOLD" "$RESET"
@@ -546,10 +506,12 @@ main() {
                 REVEALED=()
                 scratch_ticket "$trows" "$tcols" "$tcolor" "$tname"
 
+                apply_payout_items "$tcost" "$WINNINGS"
+                WINNINGS=$FINAL_PAYOUT
                 CREDITS=$(( CREDITS + WINNINGS ))
                 save_state
 
-                if (( WINNINGS > 0 )); then
+                if (( WINNINGS > tcost )); then
                     local net=$(( WINNINGS - tcost ))
                     local net_str
                     (( net >= 0 )) && net_str="+${net}" || net_str="$net"
@@ -561,9 +523,16 @@ main() {
                         printf '  %s%sWINNER! %s  ·  +%d credits  (net %s)%s\n' \
                             "$GREEN" "$BOLD" "$WIN_LABEL" "$WINNINGS" "$net_str" "$RESET"
                     fi
+                elif (( WINNINGS == tcost )); then
+                    printf '  %sTicket refunded. Break-even result.%s\n' "$YELLOW" "$RESET"
+                elif (( ITEM_USED_SHIELD )); then
+                    printf '  %sShield blocked %d credits on this ticket.%s\n' "$YELLOW" "$ITEM_SHIELD_BLOCKED" "$RESET"
                 else
                     printf '  %sNo match (-%d credits)%s\n' "$RED" "$tcost" "$RESET"
                 fi
+
+                [[ -n "$LUCKY_NOTE" ]] && printf '  %s%s%s\n' "$CYAN" "$LUCKY_NOTE" "$RESET"
+                (( ITEM_USED_2X )) && printf '  %s2x Win doubled the ticket payout.%s\n' "$CYAN" "$RESET"
 
                 echo
                 sleep 0.4
