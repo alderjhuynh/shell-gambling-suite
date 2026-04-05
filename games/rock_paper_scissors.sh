@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 SAVEFILE="$HOME/aura_gambling_suite_bash.txt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
 PASSIVE_CREDIT_AMOUNT=10
 PASSIVE_CREDIT_INTERVAL=300
@@ -16,59 +18,6 @@ WHITE=$'\033[97m'
 DIM=$'\033[2m'
 
 WIDTH=50
-
-load_state() {
-    CREDITS=100
-    PASSIVE_EARNED=0
-    NEXT_CREDIT_TIME=$(( $(date +%s) + PASSIVE_CREDIT_INTERVAL ))
-
-    if [[ -f "$SAVEFILE" ]]; then
-        while IFS='=' read -r key val; do
-            case "$key" in
-                credits) CREDITS=$val ;;
-                passive_earned) PASSIVE_EARNED=$val ;;
-                next_credit_time) NEXT_CREDIT_TIME=$val ;;
-            esac
-        done < "$SAVEFILE"
-
-        (( PASSIVE_EARNED < 0 )) && PASSIVE_EARNED=0
-        (( PASSIVE_EARNED > PASSIVE_CREDIT_CAP )) && PASSIVE_EARNED=$PASSIVE_CREDIT_CAP
-
-        local now missed potential allowed gain
-        now=$(date +%s)
-        if (( NEXT_CREDIT_TIME <= now )); then
-            missed=$(( (now - NEXT_CREDIT_TIME) / PASSIVE_CREDIT_INTERVAL + 1 ))
-            potential=$(( missed * PASSIVE_CREDIT_AMOUNT ))
-            allowed=$(( PASSIVE_CREDIT_CAP - PASSIVE_EARNED ))
-            (( allowed < 0 )) && allowed=0
-            gain=$(( potential < allowed ? potential : allowed ))
-            CREDITS=$(( CREDITS + gain ))
-            PASSIVE_EARNED=$(( PASSIVE_EARNED + gain ))
-            NEXT_CREDIT_TIME=$(( now + PASSIVE_CREDIT_INTERVAL ))
-        fi
-    fi
-}
-
-save_state() {
-    printf 'credits=%d\npassive_earned=%d\nnext_credit_time=%d\n' \
-        "$CREDITS" "$PASSIVE_EARNED" "$NEXT_CREDIT_TIME" > "$SAVEFILE"
-}
-
-check_passive_credits() {
-    local now avail gain
-    now=$(date +%s)
-    if (( now >= NEXT_CREDIT_TIME )); then
-        if (( PASSIVE_EARNED < PASSIVE_CREDIT_CAP )); then
-            avail=$(( PASSIVE_CREDIT_CAP - PASSIVE_EARNED ))
-            gain=$(( PASSIVE_CREDIT_AMOUNT < avail ? PASSIVE_CREDIT_AMOUNT : avail ))
-            CREDITS=$(( CREDITS + gain ))
-            PASSIVE_EARNED=$(( PASSIVE_EARNED + gain ))
-            PENDING_BONUS=$(( PENDING_BONUS + gain ))
-        fi
-        NEXT_CREDIT_TIME=$(( now + PASSIVE_CREDIT_INTERVAL ))
-        save_state
-    fi
-}
 
 hr() {
     local i
@@ -169,8 +118,14 @@ draw_screen() {
     now=$(date +%s)
     ttl=$(( NEXT_CREDIT_TIME - now ))
     (( ttl < 0 )) && ttl=0
-    printf '  Credits: %s%d%s   Bet: %s%d%s   %s+10 in %ds%s\n' \
-        "$BOLD" "$CREDITS" "$RESET" "$BOLD" "$BET" "$RESET" "$DIM" "$ttl" "$RESET"
+    local max_bet
+    max_bet=$(current_max_bet_limit "$CREDITS")
+    printf '  Credits: %s%d%s   Bet: %s%d%s   Max: %s%d%s   %s+10 in %ds%s\n' \
+        "$BOLD" "$CREDITS" "$RESET" "$BOLD" "$BET" "$RESET" "$BOLD" "$max_bet" "$RESET" "$DIM" "$ttl" "$RESET"
+    printf '  Items: 2x: %s  Lucky: %s  Shield: %s\n' \
+        "$( (( ITEM_2X_WIN )) && printf 'ON' || printf 'off' )" \
+        "$( (( ITEM_LUCKY )) && printf 'ON' || printf 'off' )" \
+        "$( (( ITEM_SHIELD )) && printf 'ON' || printf 'off' )"
 
     printf '%s%s╠%s╣%s\n' "$YELLOW" "$BOLD" "$(hr)" "$RESET"
 
@@ -194,6 +149,7 @@ main() {
 
     while true; do
         check_passive_credits
+        clamp_bet_to_limit "$CREDITS" 1
 
         if (( PENDING_BONUS > 0 )); then
             printf '\n+%d FREE CREDITS!\n\n' "$PENDING_BONUS"
@@ -216,10 +172,12 @@ main() {
                 break
                 ;;
             b)
-                read -r -p "New bet: " new_bet
+                local max_bet
+                max_bet=$(current_max_bet_limit "$CREDITS")
+                read -r -p "New bet (1-${max_bet}): " new_bet
                 if [[ "$new_bet" =~ ^[0-9]+$ ]]; then
                     (( new_bet < 1 )) && new_bet=1
-                    (( new_bet > CREDITS )) && new_bet=$CREDITS
+                    (( new_bet > max_bet )) && new_bet=$max_bet
                     BET=$new_bet
                 fi
                 continue
@@ -239,18 +197,37 @@ main() {
         PASSIVE_EARNED=0
         save_state
 
-        ai_predict
-        ai_counter "$PREDICTED_MOVE"
-        resolve_round "$PLAYER_MOVE" "$BOT_MOVE"
-
-        local delta=0
-        if (( RESULT_VALUE > 0 )); then
-            delta=$(( BET * 2 ))
-        elif (( RESULT_VALUE == 0 )); then
-            delta=$BET
+        local lucky_round=0
+        local round_note=""
+        if consume_lucky; then
+            lucky_round=1
+            round_note="Lucky nudged Raya into a worse throw."
         fi
 
-        CREDITS=$(( CREDITS + delta ))
+        ai_predict
+        if (( lucky_round )); then
+            local lucky_roll=$(( RANDOM % 100 ))
+            if (( lucky_roll < 60 )); then
+                BOT_MOVE=$(( (PLAYER_MOVE + 2) % 3 ))
+            elif (( lucky_roll < 85 )); then
+                BOT_MOVE=$PLAYER_MOVE
+            else
+                ai_counter "$PREDICTED_MOVE"
+            fi
+        else
+            ai_counter "$PREDICTED_MOVE"
+        fi
+        resolve_round "$PLAYER_MOVE" "$BOT_MOVE"
+
+        local payout=0
+        if (( RESULT_VALUE > 0 )); then
+            payout=$(( BET * 2 ))
+        elif (( RESULT_VALUE == 0 )); then
+            payout=$BET
+        fi
+
+        apply_payout_items "$BET" "$payout"
+        CREDITS=$(( CREDITS + FINAL_PAYOUT ))
         save_state
 
         ai_update "$PLAYER_MOVE"
@@ -258,6 +235,13 @@ main() {
         LAST_ROUND_PLAYER=$(move_name "$PLAYER_MOVE")
         LAST_ROUND_BOT=$(move_name "$BOT_MOVE")
         LAST_ROUND_RESULT=$RESULT_LABEL
+        if (( RESULT_VALUE > 0 && ITEM_USED_2X )); then
+            LAST_ROUND_RESULT="${RESULT_LABEL} (2x Win)"
+        elif (( RESULT_VALUE < 0 && ITEM_USED_SHIELD )); then
+            LAST_ROUND_RESULT="${RESULT_LABEL} (Shield)"
+        elif [[ -n "$round_note" ]]; then
+            LAST_ROUND_RESULT="${RESULT_LABEL} (Lucky)"
+        fi
 
         sleep 0.6
     done
