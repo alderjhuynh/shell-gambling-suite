@@ -2,32 +2,50 @@
 
 set -euo pipefail
 
-COMMAND_NAMES=("bj" "sc" "cf" "rps" "sl" "vp")
-COMMAND_FILES=("blackjack.sh" "scratchers.sh" "coinflip.sh" "rock_paper_scissors.sh" "slots.sh" "video_poker.sh")
+COMMAND_NAMES=("bj" "sc" "cf" "rps" "sl" "vp" "mi" "shop")
 
-TARGET_DIR="/usr/local/bin"
-DIR="$(cd "$(dirname "$0")" && pwd)"
-GAME_DIR="$DIR/games"
+PREFIX="${PREFIX:-/usr/local}"
+BIN_DIR="${BIN_DIR:-$PREFIX/bin}"
+LIB_DIR="${LIB_DIR:-$PREFIX/lib/aura-gambling-suite}"
+
+needs_sudo_for() {
+  local path="$1"
+  while [[ ! -e "$path" && "$path" != "/" ]]; do
+    path="$(dirname "$path")"
+  done
+  [[ ! -w "$path" ]]
+}
+
+run_root() {
+  if [[ "${USE_SUDO:-0}" == "1" ]]; then
+    sudo "$@"
+  else
+    "$@"
+  fi
+}
+
+USE_SUDO=0
+if needs_sudo_for "$BIN_DIR" || needs_sudo_for "$LIB_DIR"; then
+  USE_SUDO=1
+fi
 
 echo "Uninstalling Aura Gambling Suite CLI..."
+echo "  Bin dir: $BIN_DIR"
+echo "  Lib dir: $LIB_DIR"
 
-for i in "${!COMMAND_NAMES[@]}"; do
-  cmd="${COMMAND_NAMES[$i]}"
-  script="${COMMAND_FILES[$i]}"
-  target_path="$TARGET_DIR/$cmd"
-  source_path="$GAME_DIR/$script"
-
-  if [ ! -f "$source_path" ]; then
-    echo "Skipping $cmd (missing $script)"
-    continue
+for cmd in "${COMMAND_NAMES[@]}"; do
+  target_path="$BIN_DIR/$cmd"
+  if [[ -e "$target_path" ]]; then
+    run_root rm -f "$target_path"
+    echo "Removed $cmd"
+  else
+    echo "Skipping $cmd (not installed)"
   fi
-
-    if cmp -s "$source_path" "$target_path"; then
-        sudo rm "$target_path"
-        echo "Removed $cmd"
-    else
-        echo "WARNING: $cmd exists but differs from expected file. Skipping."
-    fi
 done
+
+if [[ -d "$LIB_DIR" ]]; then
+  run_root rm -rf "$LIB_DIR"
+  echo "Removed $LIB_DIR"
+fi
 
 echo "Uninstall complete."
